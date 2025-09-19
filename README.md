@@ -23,7 +23,7 @@ We use the **ViT-B/16** backbone pretrained on **ImageNet-21k**.
 
 ## Examples for training([CUB-200-2011](https://data.caltech.edu/records/65de6-vp158))
 
-Launch training with **MPA** initialization and **KLD** optimization (Koopman–Lyapunov discrete dynamics):
+Launch training [VPT](https://github.com/kmnp/vpt) with **MPA** initialization and **KLD** optimization:
 
 ```bash
 python train.py \
