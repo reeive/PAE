@@ -24,9 +24,12 @@ We use the **ViT-B/16** backbone pretrained on **ImageNet-21k**.
   - Put the file under your model root, e.g. `/path/to/data/weights/ViT-B_16.npz`
   - Make sure `MODEL.MODEL_ROOT=/path/to/data` in the training command
 
-## Examples for training 
-The command below launches training with **MPA** initialization and **KLD** optimization.
-`python train.py \
+## Examples for training([CUB-200-2011](https://data.caltech.edu/records/65de6-vp158))
+
+Launch training with **MPA** initialization and **KLD** optimization (Koopman–Lyapunov discrete dynamics):
+
+```bash
+python train.py \
   --config-file configs/prompt/cub.yaml \
   MODEL.TYPE vit \
   DATA.BATCH_SIZE 128 \
@@ -42,7 +45,7 @@ The command below launches training with **MPA** initialization and **KLD** opti
   DATA.NUMBER_CLASSES 200 \
   SOLVER.BASE_LR 0.25 \
   SOLVER.WEIGHT_DECAY 0.001 \
-  SEED 42 \
+  SEED 666 \
   MODEL.MODEL_ROOT /path/to/data \
   DATA.DATAPATH /path/to/data/CUB_200_2011 \
-  OUTPUT_DIR output`
+  OUTPUT_DIR output
