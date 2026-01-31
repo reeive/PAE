@@ -1,7 +1,7 @@
 # Visual Prompt-Agnostic Evolution
 
 > **Demo available.** This repository provides a minimal working example to reproduce the core pipeline.  
-> The complete implementation and full documentation will be released upon paper acceptance.
+> The complete implementation and full documentation will be released later.
 
 ## Environment
 
