@@ -6,9 +6,6 @@
 
 Official implementation of **"Visual Prompt-Agnostic Evolution"** (ICLR 2026).
 
-PAE strengthens Visual Prompt Tuning (VPT) by explicitly modeling the dynamics of learnable prompts through:
-- **MPA (Modal Pre-Alignment)**: Task-aware prompt initialization via frequency-domain shortcuts
-- **KLD (Koopman-Lyapunov Dynamical System)**: Cross-layer prompt evolution with stability guarantees
 
 ## Key Features
 
