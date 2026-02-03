@@ -21,6 +21,7 @@ from src.models.build_model import build_model
 from src.utils.file_io import PathManager
 
 from launch import default_argument_parser, logging_train_setup
+
 warnings.filterwarnings("ignore")
 
 
@@ -79,7 +80,7 @@ def get_loaders(cfg, logger):
         test_loader = None
     else:
         test_loader = data_loader.construct_test_loader(cfg)
-    return train_loader,  val_loader, test_loader
+    return train_loader, val_loader, test_loader
 
 
 def train(cfg, args):
@@ -103,10 +104,12 @@ def train(cfg, args):
     logger.info("Constructing models...")
     model, cur_device = build_model(cfg)
 
-
     if cfg.MODEL.PROMPT.INITIATION == "mpa":
         logger.info("MPA initiation is configured. Executing...")
-        model.init_mpa(train_loader, patch_size_k=16, stride_s=8)
+        # 从配置文件读取 MPA 参数（论文默认：window_size=16, stride=8）
+        mpa_window = getattr(cfg.MODEL.PROMPT, 'MPA_WINDOW_SIZE', 16)
+        mpa_stride = getattr(cfg.MODEL.PROMPT, 'MPA_STRIDE', 8)
+        model.init_mpa(train_loader, window_size=mpa_window, stride=mpa_stride)
         logger.info("MPA initiation finished.")
 
     logger.info("Setting up Evalutator...")
@@ -116,7 +119,7 @@ def train(cfg, args):
 
     if train_loader:
         trainer.train_classifier(train_loader, val_loader, test_loader)
-        
+
     else:
         print("No train loader presented. Exit")
 
@@ -125,7 +128,6 @@ def train(cfg, args):
 
 
 def main(args):
-
     # set up cfg and args
     cfg = setup(args)
 

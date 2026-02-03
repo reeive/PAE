@@ -47,14 +47,14 @@ _C.MODEL.LINEAR.DROPOUT = 0.1
 # Prompt options
 # ----------------------------------------------------------------------
 _C.MODEL.PROMPT = CfgNode()
-_C.MODEL.PROMPT.NUM_TOKENS = 5
+_C.MODEL.PROMPT.NUM_TOKENS = 20
 _C.MODEL.PROMPT.LOCATION = "prepend"
 # prompt initalizatioin: 
     # (1) default "random"
     # (2) "final-cls" use aggregated final [cls] embeddings from training dataset
     # (3) "cls-nolastl": use first 12 cls embeddings (exclude the final output) for deep prompt
     # (4) "cls-nofirstl": use last 12 cls embeddings (exclude the input to first layer)
-_C.MODEL.PROMPT.INITIATION = "mpa"  # "final-cls", "cls-first12", "random"
+_C.MODEL.PROMPT.INITIATION = "mpa"  # "final-cls", "cls-first12", "random", "mpa"
 _C.MODEL.PROMPT.CLSEMB_FOLDER = ""
 _C.MODEL.PROMPT.CLSEMB_PATH = ""
 _C.MODEL.PROMPT.PROJECT = -1  # "projection mlp hidden dim"
@@ -79,9 +79,11 @@ _C.MODEL.PROMPT.KOOPMAN_DIM = 1024
 _C.MODEL.PROMPT.KOOPMAN_WEIGHT = 0.05
 _C.MODEL.PROMPT.LYAPUNOV_WEIGHT = 0.05
 _C.MODEL.PROMPT.DEEP_PROMPT_KOOPMAN = True
+_C.MODEL.PROMPT.KOOPMAN_MOD = "layerwise" or "global"
 
-
-
+# MPA (Modal Pre-Alignment) options - Paper: w=16, r=8
+_C.MODEL.PROMPT.MPA_WINDOW_SIZE = 16  # Sliding window size (w in paper)
+_C.MODEL.PROMPT.MPA_STRIDE = 8        # Sliding window stride (r in paper)
 
 # ----------------------------------------------------------------------
 # adapter options
@@ -139,6 +141,49 @@ _C.DATA.BATCH_SIZE = 32
 _C.DATA.NUM_WORKERS = 4
 # Load data to pinned host memory
 _C.DATA.PIN_MEMORY = True
+
+# ----------------------------------------------------------------------
+# Koopman Analysis options
+# ----------------------------------------------------------------------
+_C.ANALYSIS = CfgNode()
+
+# Enable automatic Koopman analysis after training
+_C.ANALYSIS.ENABLE_AUTO_ANALYSIS = False
+
+# Enable multi-run comparison after all runs complete
+_C.ANALYSIS.ENABLE_COMPARISON = False
+
+# Model name for labeling in analysis reports
+_C.ANALYSIS.MODEL_NAME = "model"
+
+# Number of batches to use for trajectory data collection
+_C.ANALYSIS.NUM_TRAJECTORY_BATCHES = 10
+
+# Save raw trajectory data to disk (can be large)
+_C.ANALYSIS.SAVE_TRAJECTORY_DATA = False
+
+# Directory name for analysis outputs (relative to OUTPUT_DIR)
+_C.ANALYSIS.OUTPUT_SUBDIR = "koopman_analysis"
+
+# Analysis types to perform:
+# eigenanalysis: spectral radius, eigenvalues, singular values
+# modal_energy: mode decomposition and energy distribution
+# spectral_alignment: cross-layer subspace consistency
+# comprehensive: all of the above
+_C.ANALYSIS.ANALYSIS_TYPE = "comprehensive"
+
+# Visualization options
+_C.ANALYSIS.VIZ = CfgNode()
+_C.ANALYSIS.VIZ.DPI = 300
+_C.ANALYSIS.VIZ.FIGURE_FORMAT = "png"  # png, pdf, svg
+_C.ANALYSIS.VIZ.SAVE_INDIVIDUAL_PLOTS = True
+_C.ANALYSIS.VIZ.SAVE_DASHBOARD = True
+
+# Comparison options (for multi-model analysis)
+_C.ANALYSIS.COMPARISON = CfgNode()
+_C.ANALYSIS.COMPARISON.BASELINE_NAME = "baseline"
+_C.ANALYSIS.COMPARISON.MODELS_TO_COMPARE = []  # empty means compare all runs
+_C.ANALYSIS.COMPARISON.STATISTICAL_TESTS = True  # perform t-tests, ANOVA, etc.
 
 _C.DIST_BACKEND = "nccl"
 _C.DIST_INIT_PATH = "env://"

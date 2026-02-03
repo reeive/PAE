@@ -1,4 +1,4 @@
-# !/usr/bin/env python3
+#!/usr/bin/env python3
 """
 a trainer class
 """
@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import os
 
-# --- 1. 新增的 import ---
+# --- Additional imports for PAE ---
 import contextlib
 from typing import Dict, List, Tuple, Optional
 import numpy as np
@@ -16,7 +16,6 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 import torch.distributed as dist
 from torch.cuda.amp import autocast
-# --- import 结束 ---
 
 from fvcore.common.config import CfgNode
 from fvcore.common.checkpoint import Checkpointer
@@ -28,7 +27,7 @@ from ..solver.losses import build_loss
 from ..utils import logging
 from ..utils.train_utils import AverageMeter, gpu_mem_usage
 
-logger = logging.get_logger("prompt_agnostic_evolution")
+logger = logging.get_logger("visual_prompt")
 
 
 def is_dist() -> bool:
@@ -126,13 +125,12 @@ def displaced_params(model: nn.Module, base_state: Dict[str, torch.Tensor],
         core.load_state_dict({**current, **base_state}, strict=False)
 
 
-# --- 辅助函数结束 ---
+# --- End helper functions ---
 
 
 class Trainer():
     """
-    a trainer with below logics:
-    ... (原有注释不变)
+    A trainer class for visual prompt tuning with PAE support.
     """
 
     def __init__(
@@ -149,6 +147,29 @@ class Trainer():
         # solver related
         logger.info("\tSetting up the optimizer...")
         self.optimizer = make_optimizer([self.model], cfg.SOLVER)
+        core = get_model_core(self.model)
+        koop_names = []
+        for name, p in core.named_parameters():
+            lname = name.lower()
+            if any(k in lname for k in ["koop", "k_layers", "l_layers", "k_global", "l_global"]):
+                koop_names.append(name)
+
+        logger.info(f"[KLD-Params] Found {len(koop_names)} Koopman-like parameters in model:")
+        for name in koop_names:
+            logger.info(f"  - {name}")
+
+        # Verify Koopman params are in optimizer
+        opt_names = set()
+        for i, group in enumerate(self.optimizer.param_groups):
+            for p in group["params"]:
+                for name, mp in core.named_parameters():
+                    if mp is p:
+                        opt_names.add(name)
+
+        logger.info("[KLD-Params] Optimizer param groups check:")
+        for name in koop_names:
+            logger.info(f"  - {name}: in_optimizer={name in opt_names}")
+
         self.scheduler = make_scheduler(self.optimizer, cfg.SOLVER)
         self.cls_criterion = build_loss(self.cfg)
 
@@ -166,35 +187,37 @@ class Trainer():
 
         self.evaluator = evaluator
         self.cpu_device = torch.device("cpu")
+        self.best_epoch = -1
+        self.best_metric = 0.0
 
     def forward_one_batch(self, inputs, targets, is_train):
-        """Train a single (full) epoch on the model using the given
-        data loader.
+        """Train or eval one batch.
 
         Args:
-            X: input dict
-            targets
+            inputs: input tensor
+            targets: labels
             is_train: bool
         Returns:
-            loss
-            outputs: output logits
+            loss (tensor)
+            outputs (logits)
         """
         # move data to device
-        inputs = inputs.to(self.device, non_blocking=True)  # (batchsize, 2048)
-        targets = targets.to(self.device, non_blocking=True)  # (batchsize, )
+        inputs = inputs.to(self.device, non_blocking=True)
+        targets = targets.to(self.device, non_blocking=True)
 
         if self.cfg.DBG:
             logger.info(f"shape of inputs: {inputs.shape}")
             logger.info(f"shape of targets: {targets.shape}")
 
-        # forward
         with torch.set_grad_enabled(is_train):
-            outputs = self.model(inputs)  # (batchsize, num_cls)
+            outputs = self.model(inputs)
+
             if self.cfg.DBG:
                 logger.info(
                     "shape of model output: {}, targets: {}".format(
                         outputs.shape, targets.shape))
 
+            # Classification loss
             if self.cls_criterion.is_local() and is_train:
                 self.model.eval()
                 loss = self.cls_criterion(
@@ -202,11 +225,50 @@ class Trainer():
                     self.model, inputs
                 )
             elif self.cls_criterion.is_local():
-                return torch.tensor(1), outputs
+                return torch.tensor(1, device=self.device), outputs
             else:
                 loss = self.cls_criterion(
                     outputs, targets, self.cls_weights)
 
+            # ===== KLD Regularization: collect and add to loss =====
+            koopman_reg = None
+            koopman_enabled = False
+
+            core = get_model_core(self.model)
+            if hasattr(core, "enc") and hasattr(core.enc, "transformer"):
+                tr = core.enc.transformer
+                koopman_enabled = getattr(tr, "koopman_enabled", False)
+
+                if koopman_enabled:
+                    # Already weighted by KOOPMAN_WEIGHT / LYAPUNOV_WEIGHT internally
+                    koopman_loss = tr.koopman_loss
+                    lyapunov_loss = tr.lyapunov_loss
+
+                    # Ensure tensor on correct device
+                    if not isinstance(koopman_loss, torch.Tensor):
+                        koopman_loss = torch.as_tensor(koopman_loss, device=self.device, dtype=loss.dtype)
+                    else:
+                        koopman_loss = koopman_loss.to(device=self.device, dtype=loss.dtype)
+
+                    if not isinstance(lyapunov_loss, torch.Tensor):
+                        lyapunov_loss = torch.as_tensor(lyapunov_loss, device=self.device, dtype=loss.dtype)
+                    else:
+                        lyapunov_loss = lyapunov_loss.to(device=self.device, dtype=loss.dtype)
+
+                    koopman_reg = koopman_loss + lyapunov_loss
+
+            # Add KLD regularization only during training
+            if is_train and koopman_enabled and koopman_reg is not None:
+                loss = loss + koopman_reg
+                if self.cfg.DBG:
+                    logger.info(
+                        f"Koopman regularization added. "
+                        f"koopman_loss={float(tr.koopman_loss):.4e}, "
+                        f"lyapunov_loss={float(tr.lyapunov_loss):.4e}, "
+                        f"total_reg={float(koopman_reg):.4e}"
+                    )
+
+            # ====== Numerical stability check ======
             if loss == float('inf'):
                 logger.info(
                     "encountered infinite loss, skip gradient updating for this batch!"
@@ -218,10 +280,22 @@ class Trainer():
                 )
                 return -1, -1
 
-        # =======backward and optim step only if in training phase... =========
+        # ======= backward and optim step only if in training phase =========
         if is_train:
             self.optimizer.zero_grad()
             loss.backward()
+
+            core = get_model_core(self.model)
+            koop_params = []
+            for name, p in core.named_parameters():
+                lname = name.lower()
+                if any(k in lname for k in ["koop", "k_layers", "l_layers", "k_global", "l_global"]):
+                    if p.grad is not None:
+                        koop_params.append(p)
+
+            if len(koop_params) > 0:
+                torch.nn.utils.clip_grad_norm_(koop_params, max_norm=10)
+
             self.optimizer.step()
 
         return loss, outputs
@@ -246,9 +320,10 @@ class Trainer():
         # setup training epoch params
         total_epoch = self.cfg.SOLVER.TOTAL_EPOCH
         total_data = len(train_loader)
-        best_epoch = -1
-        best_metric = 0
         log_interval = self.cfg.SOLVER.LOG_EVERY_N
+
+        self.best_epoch = -1
+        self.best_metric = 0.0
 
         losses = AverageMeter('Loss', ':.4e')
         batch_time = AverageMeter('Time', ':6.3f')
@@ -256,7 +331,6 @@ class Trainer():
 
         self.cls_weights = train_loader.dataset.get_class_weights(
             self.cfg.DATA.CLASS_WEIGHTS_TYPE)
-        # logger.info(f"class weights: {self.cls_weights}")
         patience = 0  # if > self.cfg.SOLVER.PATIENCE, stop training
 
         for epoch in range(total_epoch):
@@ -283,29 +357,23 @@ class Trainer():
                     break
 
                 X, targets = self.get_input(input_data)
-                # logger.info(X.shape)
-                # logger.info(targets.shape)
-                # measure data loading time
                 data_time.update(time.time() - end)
 
                 train_loss, _ = self.forward_one_batch(X, targets, True)
 
                 if train_loss == -1:
-                    # continue
                     return None
 
                 losses.update(train_loss.item(), X.shape[0])
 
-                # measure elapsed time
                 batch_time.update(time.time() - end)
                 end = time.time()
 
-                # log during one batch
                 if (idx + 1) % log_interval == 0:
                     seconds_per_batch = batch_time.val
                     eta = datetime.timedelta(seconds=int(
-                        seconds_per_batch * (total_data - idx - 1) + seconds_per_batch * total_data * (
-                                total_epoch - epoch - 1)))
+                        seconds_per_batch * (total_data - idx - 1)
+                        + seconds_per_batch * total_data * (total_epoch - epoch - 1)))
                     logger.info(
                         "\tTraining {}/{}. train loss: {:.4f},".format(
                             idx + 1,
@@ -324,7 +392,6 @@ class Trainer():
                 + "avg data time: {:.2e}, avg batch time: {:.4f}, ".format(
                     data_time.avg, batch_time.avg)
                 + "average train loss: {:.4f}".format(losses.avg))
-            # update lr, scheduler.step() must be called after optimizer.step() according to the docs: https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate  # noqa
             self.scheduler.step()
 
             # Enable eval mode
@@ -339,21 +406,30 @@ class Trainer():
                 self.eval_classifier(
                     test_loader, "test", epoch == total_epoch - 1)
 
-            # check the patience
             t_name = "val_" + val_loader.dataset.name
             try:
                 curr_acc = self.evaluator.results[f"epoch_{epoch}"]["classification"][t_name]["top1"]
             except KeyError:
                 return
 
-            if curr_acc > best_metric:
-                best_metric = curr_acc
-                best_epoch = epoch + 1
+            if curr_acc > self.best_metric:
+                self.best_metric = curr_acc
+                self.best_epoch = epoch + 1
                 logger.info(
-                    f'Best epoch {best_epoch}: best metric: {best_metric:.3f}')
+                    f'Best epoch {self.best_epoch}: best metric: {self.best_metric:.3f}'
+                )
                 patience = 0
+
+
+                if getattr(self.cfg.MODEL, "SAVE_CKPT", True):
+                    self.checkpointer.save(
+                        "model_best",
+                        best_metric=float(self.best_metric),
+                        best_epoch=self.best_epoch,
+                    )
             else:
                 patience += 1
+
             if patience >= self.cfg.SOLVER.PATIENCE:
                 logger.info("No improvement. Breaking out of loop.")
                 break
@@ -383,14 +459,12 @@ class Trainer():
         test_name = prefix + "_" + data_loader.dataset.name
         total = len(data_loader)
 
-        # initialize features and target
         total_logits = []
         total_targets = []
 
         for idx, input_data in enumerate(data_loader):
             end = time.time()
             X, targets = self.get_input(input_data)
-            # measure data loading time
             data_time.update(time.time() - end)
 
             if self.cfg.DBG:
@@ -400,12 +474,11 @@ class Trainer():
                 return
             losses.update(loss, X.shape[0])
 
-            # measure elapsed time
             batch_time.update(time.time() - end)
 
             if (idx + 1) % log_interval == 0:
                 logger.info(
-                    "\tTest {}/{}. loss: {:.3f}, {:.4f} s / batch. (data: {:.2e})".format(  # noqa
+                    "\tTest {}/{}. loss: {:.3f}, {:.4f} s / batch. (data: {:.2e})".format(
                         idx + 1,
                         total,
                         losses.val,
@@ -414,7 +487,6 @@ class Trainer():
                     ) + "max mem: {:.5f} GB ".format(gpu_mem_usage())
                 )
 
-            # targets: List[int]
             total_targets.extend(list(targets.numpy()))
             total_logits.append(outputs)
         logger.info(
@@ -425,14 +497,12 @@ class Trainer():
         if self.model.side is not None:
             logger.info(
                 "--> side tuning alpha = {:.4f}".format(self.model.side_alpha))
-        # total_testimages x num_classes
         joint_logits = torch.cat(total_logits, dim=0).cpu().numpy()
         self.evaluator.classify(
             joint_logits, total_targets,
             test_name, self.cfg.DATA.MULTILABEL,
         )
 
-        # save the probs and targets
         if save and self.cfg.MODEL.SAVE_CKPT:
             out = {"targets": total_targets, "joint_logits": joint_logits}
             out_path = os.path.join(

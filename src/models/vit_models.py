@@ -69,13 +69,21 @@ class ViT(nn.Module):
         self.setup_side()
         self.setup_head(cfg)
 
-    def init_mpa(self, train_loader, patch_size_k=16, stride_s=8):
-
+    def init_mpa(self, train_loader, window_size=16, stride=8):
+        """
+        Modal Pre-Alignment (MPA) initialization following the paper.
+        
+        Args:
+            train_loader: DataLoader for training data
+            window_size: Size of the sliding window (w in paper, default 16)
+            stride: Stride of the sliding window (r in paper, default 8)
+        """
         if not hasattr(self.enc, 'transformer') or not hasattr(self.enc.transformer, 'prompt_embeddings'):
             logger.error("MPA Error: The backbone 'self.enc' is not a PromptedVisionTransformer. Aborting MPA.")
             return
 
-        logger.info("🚀 Starting Improved MPA initialization (using Patch Masks)...")
+        logger.info("Starting MPA initialization (Paper-aligned sliding window)...")
+        logger.info(f"   Window size w={window_size}, stride r={stride}")
         # ==================== METRICS SETUP ====================
         start_time = time.time()
         device = self.head.parameters().__next__().device
@@ -99,13 +107,24 @@ class ViT(nn.Module):
         num_tokens = prompt_cfg.NUM_TOKENS
         B, C, H, W = x_batch.shape
 
-        logger.info(f"MPA Phase I: Generating patch masks with k={patch_size_k}, s={stride_s}...")
+        # ========== Paper formula: sliding window frequency masks ==========
+        # S = (floor((H-w)/r) + 1) * (floor((W-w)/r) + 1)
+        w = window_size
+        r = stride
+        
+        num_h = (H - w) // r + 1  # vertical window count
+        num_w = (W - w) // r + 1  # horizontal window count
+        S = num_h * num_w  # total candidate masks
+        
+        logger.info(f"MPA Phase I: Generating {S} candidate masks ({num_h} x {num_w} grid)")
 
         candidate_masks_list = []
-        for i in range(0, H - patch_size_k + 1, stride_s):
-            for j in range(0, W - patch_size_k + 1, stride_s):
+        for i in range(num_h):
+            for j in range(num_w):
+                h_start = i * r
+                w_start = j * r
                 mask = torch.zeros(H, W, device=device)
-                mask[i:i + patch_size_k, j:j + patch_size_k] = 1.0
+                mask[h_start:h_start + w, w_start:w_start + w] = 1.0
                 candidate_masks_list.append(mask)
 
         if not candidate_masks_list:
@@ -185,60 +204,104 @@ class ViT(nn.Module):
     def build_backbone(self, prompt_cfg, cfg, adapter_cfg, load_pretrain, vis):
         transfer_type = cfg.MODEL.TRANSFER_TYPE
         self.enc, self.feat_dim = build_vit_sup_models(
-            cfg.DATA.FEATURE, cfg.DATA.CROPSIZE, prompt_cfg, cfg.MODEL.MODEL_ROOT, adapter_cfg, load_pretrain, vis
+            cfg.DATA.FEATURE, cfg.DATA.CROPSIZE, prompt_cfg,
+            cfg.MODEL.MODEL_ROOT, adapter_cfg, load_pretrain, vis
         )
+
+        # ---- Koopman parameter whitelist: parameters matching these keys are KLD-related ----
+        def is_koopman_param(name: str) -> bool:
+            lname = name.lower()
+            # Covers:
+            #   enc.transformer.koopman_in / koopman_out
+            #   enc.transformer.K_layers.* / L_layers.*
+            #   enc.transformer.K_global / L_global
+            koop_keys = [
+                "koop",      # koopman_in / koopman_out
+                "k_layers",  # layerwise K
+                "l_layers",  # layerwise L
+                "k_global",  # global K
+                "l_global",  # global L
+            ]
+            return any(k in lname for k in koop_keys)
 
         # linear, prompt, cls, cls+prompt, partial_1
         if transfer_type == "partial-1":
             total_layer = len(self.enc.transformer.encoder.layer)
-            # tuned_params = [
-            #     "transformer.encoder.layer.{}".format(i-1) for i in range(total_layer)]
             for k, p in self.enc.named_parameters():
-                if "transformer.encoder.layer.{}".format(total_layer - 1) not in k and "transformer.encoder.encoder_norm" not in k: # noqa
+                if (
+                        f"transformer.encoder.layer.{total_layer - 1}" not in k
+                        and "transformer.encoder.encoder_norm" not in k
+                        and not is_koopman_param(k)
+                ):
                     p.requires_grad = False
+
         elif transfer_type == "partial-2":
             total_layer = len(self.enc.transformer.encoder.layer)
             for k, p in self.enc.named_parameters():
-                if "transformer.encoder.layer.{}".format(total_layer - 1) not in k and "transformer.encoder.layer.{}".format(total_layer - 2) not in k and "transformer.encoder.encoder_norm" not in k: # noqa
+                if (
+                        f"transformer.encoder.layer.{total_layer - 1}" not in k
+                        and f"transformer.encoder.layer.{total_layer - 2}" not in k
+                        and "transformer.encoder.encoder_norm" not in k
+                        and not is_koopman_param(k)
+                ):
                     p.requires_grad = False
 
         elif transfer_type == "partial-4":
             total_layer = len(self.enc.transformer.encoder.layer)
             for k, p in self.enc.named_parameters():
-                if "transformer.encoder.layer.{}".format(total_layer - 1) not in k and "transformer.encoder.layer.{}".format(total_layer - 2) not in k and "transformer.encoder.layer.{}".format(total_layer - 3) not in k and "transformer.encoder.layer.{}".format(total_layer - 4) not in k and "transformer.encoder.encoder_norm" not in k: # noqa
+                if (
+                        f"transformer.encoder.layer.{total_layer - 1}" not in k
+                        and f"transformer.encoder.layer.{total_layer - 2}" not in k
+                        and f"transformer.encoder.layer.{total_layer - 3}" not in k
+                        and f"transformer.encoder.layer.{total_layer - 4}" not in k
+                        and "transformer.encoder.encoder_norm" not in k
+                        and not is_koopman_param(k)
+                ):
                     p.requires_grad = False
 
         elif transfer_type == "linear" or transfer_type == "side":
+            # Linear head or side-tuning: freeze encoder but allow Koopman params
             for k, p in self.enc.named_parameters():
-                p.requires_grad = False
+                if not is_koopman_param(k):
+                    p.requires_grad = False
 
         elif transfer_type == "tinytl-bias":
             for k, p in self.enc.named_parameters():
-                if 'bias' not in k:
+                if ("bias" not in k) and (not is_koopman_param(k)):
                     p.requires_grad = False
 
         elif transfer_type == "prompt" and prompt_cfg.LOCATION == "below":
             for k, p in self.enc.named_parameters():
-                if "prompt" not in k and "embeddings.patch_embeddings.weight" not in k  and "embeddings.patch_embeddings.bias" not in k:
+                lname = k.lower()
+                if (
+                        "prompt" not in lname
+                        and "embeddings.patch_embeddings.weight" not in k
+                        and "embeddings.patch_embeddings.bias" not in k
+                        and not is_koopman_param(k)
+                ):
                     p.requires_grad = False
 
         elif transfer_type == "prompt":
+            # Train only prompt + Koopman params, freeze rest of encoder
             for k, p in self.enc.named_parameters():
-                if "prompt" not in k:
+                lname = k.lower()
+                if ("prompt" not in lname) and (not is_koopman_param(k)):
                     p.requires_grad = False
 
         elif transfer_type == "prompt+bias":
             for k, p in self.enc.named_parameters():
-                if "prompt" not in k and 'bias' not in k:
+                lname = k.lower()
+                if ("prompt" not in lname) and ("bias" not in lname) and (not is_koopman_param(k)):
                     p.requires_grad = False
 
         elif transfer_type == "prompt-noupdate":
+            # Freeze entire encoder including Koopman
             for k, p in self.enc.named_parameters():
                 p.requires_grad = False
 
         elif transfer_type == "cls":
             for k, p in self.enc.named_parameters():
-                if "cls_token" not in k:
+                if ("cls_token" not in k) and (not is_koopman_param(k)):
                     p.requires_grad = False
 
         elif transfer_type == "cls-reinit":
@@ -246,14 +309,14 @@ class ViT(nn.Module):
                 self.enc.transformer.embeddings.cls_token,
                 std=1e-6
             )
-
             for k, p in self.enc.named_parameters():
-                if "cls_token" not in k:
+                if ("cls_token" not in k) and (not is_koopman_param(k)):
                     p.requires_grad = False
 
         elif transfer_type == "cls+prompt":
             for k, p in self.enc.named_parameters():
-                if "prompt" not in k and "cls_token" not in k:
+                lname = k.lower()
+                if ("prompt" not in lname) and ("cls_token" not in k) and (not is_koopman_param(k)):
                     p.requires_grad = False
 
         elif transfer_type == "cls-reinit+prompt":
@@ -262,13 +325,15 @@ class ViT(nn.Module):
                 std=1e-6
             )
             for k, p in self.enc.named_parameters():
-                if "prompt" not in k and "cls_token" not in k:
+                lname = k.lower()
+                if ("prompt" not in lname) and ("cls_token" not in k) and (not is_koopman_param(k)):
                     p.requires_grad = False
-        
+
         # adapter
         elif transfer_type == "adapter":
             for k, p in self.enc.named_parameters():
-                if "adapter" not in k:
+                lname = k.lower()
+                if ("adapter" not in lname) and (not is_koopman_param(k)):
                     p.requires_grad = False
 
         elif transfer_type == "end2end":

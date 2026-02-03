@@ -1,29 +1,55 @@
-# Visual Prompt-Agnostic Evolution
+# Visual Prompt-Agnostic Evolution 
 
-> **Demo available.** This repository provides a minimal working example to reproduce the core pipeline.  
-> The complete implementation and full documentation will be released upon paper acceptance.
+[![ICLR 2026](https://img.shields.io/badge/ICLR-2026-blue.svg)](https://arxiv.org/abs/2601.20232)
+[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch 1.7+](https://img.shields.io/badge/pytorch-1.7+-ee4c2c.svg)](https://pytorch.org/)
 
-## Environment
+Official implementation of **"Visual Prompt-Agnostic Evolution"** (ICLR 2026).
 
-- `torch==1.7.1+cu110`, `torchvision==0.8.2+cu110`, `torchaudio==0.7.2`
-`timm==0.4.12`, `opencv-python==4.12.0.88`, `Pillow==11.3.0`, `matplotlib==3.9.4`
-`numpy==1.26.4`, `scipy==1.13.1`, `pandas==2.3.2`, `scikit-learn==1.6.1` 
-`tensorflow-metadata==1.17.2`, `tfds-nightly==4.4.0.dev202201080107`
+PAE strengthens Visual Prompt Tuning (VPT) by explicitly modeling the dynamics of learnable prompts through:
+- **MPA (Modal Pre-Alignment)**: Task-aware prompt initialization via frequency-domain shortcuts
+- **KLD (Koopman-Lyapunov Dynamical System)**: Cross-layer prompt evolution with stability guarantees
 
-> **Note:** PyTorch 1.7.x works best with NumPy 1.x. Please avoid NumPy 2.x.
+## Key Features
 
-## Pretrained Vision Backbone
+- **1.41x faster convergence** on average across VPT variants
+- **1-3% accuracy gains** on 25 datasets with multiple downstream tasks
+- **Prompt-agnostic**: Works with any VPT variant without backbone modification
+- **No inference overhead**: Only affects training dynamics
 
-We use the **ViT-B/16** backbone pretrained on **ImageNet-21k**.
+## Installation
 
-- **Download link**: [ViT-B_16.npz](https://storage.googleapis.com/vit_models/imagenet21k/ViT-B_16.npz)
-- Suggested location:
-  - Put the file under your model root, e.g. `/path/to/data/weights/ViT-B_16.npz`
-  - Make sure `MODEL.MODEL_ROOT=/path/to/data` in the training command
+### Requirements
 
-## Examples for training([CUB-200-2011](https://data.caltech.edu/records/65de6-vp158))
+```bash
+# Core dependencies
+torch>=1.7.1
+torchvision>=0.8.2
+timm==0.4.12
+opencv-python>=4.5.0
+Pillow>=8.0.0
+matplotlib>=3.3.0
+numpy>=1.19.0  # Note: Use NumPy 1.x (avoid NumPy 2.x)
+scipy>=1.5.0
+pandas>=1.1.0
+scikit-learn>=0.24.0
 
-Launch training [VPT](https://github.com/kmnp/vpt) with **MPA** initialization and **KLD** optimization:
+# For VTAB datasets
+tensorflow-metadata>=1.0.0
+tfds-nightly
+```
+
+### Pretrained Backbone
+
+We use **ViT-B/16** pretrained on **ImageNet-21k**:
+
+1. Download: [ViT-B_16.npz](https://storage.googleapis.com/vit_models/imagenet21k/ViT-B_16.npz)
+2. Place in your model directory, e.g., `/path/to/data/weights/ViT-B_16.npz`
+3. Set `MODEL.MODEL_ROOT=/path/to/data` in training commands
+
+## Quick Start
+
+### Training with PAE (CUB-200-2011)
 
 ```bash
 python train.py \
@@ -35,6 +61,7 @@ python train.py \
   MODEL.PROMPT.KOOPMAN_DIM 256 \
   MODEL.PROMPT.KOOPMAN_WEIGHT 0.5 \
   MODEL.PROMPT.LYAPUNOV_WEIGHT 0.2 \
+  MODEL.PROMPT.KOOPMAN_MOD global \
   MODEL.PROMPT.DEEP True \
   MODEL.PROMPT.DROPOUT 0.1 \
   DATA.FEATURE sup_vitb16_imagenet21k \
@@ -42,7 +69,100 @@ python train.py \
   DATA.NUMBER_CLASSES 200 \
   SOLVER.BASE_LR 0.25 \
   SOLVER.WEIGHT_DECAY 0.001 \
-  SEED 666 \
+  SEED 42 \
   MODEL.MODEL_ROOT /path/to/data \
   DATA.DATAPATH /path/to/data/CUB_200_2011 \
   OUTPUT_DIR output
+```
+
+### Key Configuration Options
+
+| Parameter | Description | Default | Paper |
+|-----------|-------------|---------|-------|
+| `MODEL.PROMPT.INITIATION` | Initialization method (`random`, `mpa`) | `mpa` | MPA |
+| `MODEL.PROMPT.KOOPMAN_ENABLED` | Enable KLD regularization | `True` | KLD |
+| `MODEL.PROMPT.KOOPMAN_MOD` | Koopman mode (`global`, `layerwise`) | `global` | Global K |
+| `MODEL.PROMPT.KOOPMAN_DIM` | Koopman latent dimension K | `256` | Eq. 6 |
+| `MODEL.PROMPT.KOOPMAN_WEIGHT` | Weight α for L_kp loss | `0.5` | Eq. 11 |
+| `MODEL.PROMPT.LYAPUNOV_WEIGHT` | Weight β for L_stab loss | `0.2` | Eq. 11 |
+| `MODEL.PROMPT.MPA_WINDOW_SIZE` | MPA sliding window size w | `16` | Sec. 2.2 |
+| `MODEL.PROMPT.MPA_STRIDE` | MPA sliding window stride r | `8` | Sec. 2.2 |
+
+### Koopman Mode Comparison
+
+```bash
+# Global Koopman (recommended - paper default)
+MODEL.PROMPT.KOOPMAN_MOD global
+
+# Layer-wise Koopman (for ablation)
+MODEL.PROMPT.KOOPMAN_MOD layerwise
+```
+
+## Method Overview
+
+### MPA: Modal Pre-Alignment (Section 2.2)
+
+1. **Phase I - Frequency Shortcut Discovery**: Generate sliding window masks in frequency domain, evaluate task loss, select top-T masks
+2. **Phase II - Prompt Initialization**: Energy-weighted pooling of filtered patch tokens, propagate through frozen encoder
+
+### KLD: Koopman-Lyapunov Dynamical System (Section 2.3)
+
+- **Koopman Evolution**: `z_{i+1} = z_i @ K` with shared global operator K
+- **Consistency Loss**: `L_kp = Σ ||z_{i+1} - z_i @ K||²` (Eq. 8)
+- **Lyapunov Stability**: `L_stab = Σ max(0, V(z_{i+1}) - V(z_i))` (Eq. 10)
+
+## Results
+
+### VTAB-1k Benchmark (ViT-B/16)
+
+| Method | Natural | Specialized | Structured | Mean |
+|--------|---------|-------------|------------|------|
+| VPT | 78.48 | 82.43 | 54.98 | 71.96 |
+| **VPT + PAE** | **81.73** | **84.52** | **58.28** | **74.84** |
+| Gain | +3.25 | +2.09 | +3.30 | **+2.88** |
+
+### Convergence Speedup
+
+| Method | Speedup |
+|--------|---------|
+| VPT + PAE | 1.78x |
+| E2VPT + PAE | 1.65x |
+| SA2VP + PAE | 1.60x |
+
+## Project Structure
+
+```
+├── configs/              # Configuration files
+│   └── prompt/
+│       └── cub.yaml      # CUB-200-2011 config
+├── src/
+│   ├── models/
+│   │   ├── vit_prompt/
+│   │   │   └── vit.py    # PromptedTransformer with KLD
+│   │   └── vit_models.py # ViT model with MPA
+│   ├── engine/
+│   │   └── trainer.py    # Training loop with KLD loss
+│   └── solver/
+│       └── optimizer.py  # Optimizer with Koopman param groups
+├── train.py              # Main training script
+└── run.sh                # Example training scripts
+```
+
+## Citation
+
+```bibtex
+@article{wang2026visual,
+  title={Visual Prompt-Agnostic Evolution},
+  author={Wang, Junze and Fan, Lei and Zhang, Dezheng and Jing, Weipeng and Di, Donglin and Song, Yang and Liu, Sidong and Cong, Cong},
+  journal={arXiv preprint arXiv:2601.20232},
+  year={2026}
+}
+```
+
+## Acknowledgements
+
+This codebase builds upon [VPT](https://github.com/kmnp/vpt). We thank the authors for their excellent work.
+
+## License
+
+This project is released under the MIT License.

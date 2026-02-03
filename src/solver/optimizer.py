@@ -26,9 +26,8 @@ def make_optimizer(
             logger.info("Trainable params:")
 
         for key, value in model.named_parameters():
-            
-            if value.requires_grad:
 
+            if value.requires_grad:
                 if train_params.DBG_TRAINABLE:
                     logger.info("\t{}, {}, {}".format(key, value.numel(), value.shape))
                 params.append((key, value))
@@ -36,25 +35,65 @@ def make_optimizer(
     if train_params.WEIGHT_DECAY > 0:
         if train_params.OPTIMIZER == 'adamw':
 
+            # === Identify Koopman parameters separately ===
             no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-            optimizer_grouped_parameters = [
-                {'params': [p for n, p in params
-                            if not any(nd in n for nd in no_decay)],
-                 'weight_decay': 0.01},
-                {'params': [p for n, p in params
-                            if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+            koopman_keys = [
+                'koopman_in', 'koopman_out',
+                'k_layers', 'l_layers',
+                'k_global', 'l_global'
             ]
+
+            base_decay_params = []
+            base_no_decay_params = []
+            koopman_params = []
+
+            for n, p in params:
+                lname = n.lower()
+                if any(k in lname for k in koopman_keys):
+                    koopman_params.append(p)
+                elif any(nd in n for nd in no_decay):
+                    base_no_decay_params.append(p)
+                else:
+                    base_decay_params.append(p)
+
+            if train_params.DBG_TRAINABLE:
+                logger.info(f"[Optimizer] {len(base_decay_params)} base params with decay")
+                logger.info(f"[Optimizer] {len(base_no_decay_params)} base params without decay")
+                logger.info(f"[Optimizer] {len(koopman_params)} Koopman params without decay")
+
+            optimizer_grouped_parameters = []
+            if base_decay_params:
+                optimizer_grouped_parameters.append(
+                    {
+                        'params': base_decay_params,
+                        'weight_decay': train_params.WEIGHT_DECAY,
+                    }
+                )
+            if base_no_decay_params:
+                optimizer_grouped_parameters.append(
+                    {
+                        'params': base_no_decay_params,
+                        'weight_decay': 0.0,
+                    }
+                )
+            if koopman_params:
+                logger.info("[Optimizer] Disable weight decay for Koopman parameters.")
+                optimizer_grouped_parameters.append(
+                    {
+                        'params': koopman_params,
+                        'weight_decay': 0.0,   # Koopman params: no weight decay
+                    }
+                )
+
             optimizer = AdamW(
                 optimizer_grouped_parameters,
                 lr=train_params.BASE_LR,
             )
+
         else:
             _params = []
             for p in params:
                 key, value = p
-                # print(key)
-                # if not value.requires_grad:
-                #     continue
                 lr = train_params.BASE_LR
                 weight_decay = train_params.WEIGHT_DECAY
                 if "last_layer.bias" in key:
@@ -220,14 +259,7 @@ class AdamW(Optimizer):
 
                 p.data.addcdiv_(-step_size, exp_avg, denom)
 
-                # Just adding the square of the weights to the loss function is *not*
-                # the correct way of using L2 regularization/weight decay with Adam,
-                # since that will interact with the m and v parameters in strange ways.
-                #
-                # Instead we want to decay the weights in a manner that doesn't interact
-                # with the m/v parameters. This is equivalent to adding the square
-                # of the weights to the loss with plain (non-momentum) SGD.
-                # Add weight decay at the end (fixed version)
+                # decoupled weight decay
                 if group['weight_decay'] > 0.0:
                     p.data.add_(-group['lr'] * group['weight_decay'], p.data)
 
