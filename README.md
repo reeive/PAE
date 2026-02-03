@@ -36,13 +36,63 @@ tensorflow-metadata>=1.0.0
 tfds-nightly
 ```
 
-### Pretrained Backbone
+### Pretrained Backbones
 
-We use **ViT-B/16** pretrained on **ImageNet-21k**:
+We support the following pretrained backbones (all pretrained on **ImageNet-21k**):
 
-1. Download: [ViT-B_16.npz](https://storage.googleapis.com/vit_models/imagenet21k/ViT-B_16.npz)
-2. Place in your model directory, e.g., `/path/to/data/weights/ViT-B_16.npz`
+| Backbone | Architecture | Params | Download |
+|----------|-------------|--------|----------|
+| ViT-B/16 | Vision Transformer Base | 85.8M | [ViT-B_16.npz](https://storage.googleapis.com/vit_models/imagenet21k/ViT-B_16.npz) |
+| ViT-L/16 | Vision Transformer Large | 303.3M | [ViT-L_16.npz](https://storage.googleapis.com/vit_models/imagenet21k/ViT-L_16.npz) |
+| ViT-H/14 | Vision Transformer Huge | 630.8M | [ViT-H_14.npz](https://storage.googleapis.com/vit_models/imagenet21k/ViT-H_14.npz) |
+| Swin-B | Swin Transformer Base | 87.8M | [swin_base_patch4_window7_224_22k.pth](https://github.com/SwinTransformer/storage/releases/download/v1.0.0/swin_base_patch4_window7_224_22k.pth) |
+
+**Self-supervised backbone:**
+| Backbone | Architecture | Download |
+|----------|-------------|----------|
+| MAE | ViT-B/16 (Masked Autoencoder) | [mae_pretrain_vit_base.pth](https://dl.fbaipublicfiles.com/mae/pretrain/mae_pretrain_vit_base.pth) |
+
+**Segmentation backbone:**
+| Backbone | Architecture | Download |
+|----------|-------------|----------|
+| SETR | ViT-L/16 | [SETR weights](https://github.com/fudan-zvg/SETR) |
+
+**Setup:**
+1. Download the desired backbone weights
+2. Place in your model directory, e.g., `/path/to/data/weights/`
 3. Set `MODEL.MODEL_ROOT=/path/to/data` in training commands
+
+### Datasets & Benchmarks
+
+We evaluate on **25 datasets** across multiple downstream tasks:
+
+#### FGVC (Fine-Grained Visual Classification)
+
+| Dataset | Classes | Train | Val | Test |
+|---------|---------|-------|-----|------|
+| [CUB-200-2011](http://www.vision.caltech.edu/visipedia/CUB-200-2011.html) | 200 | 5,394 | 600 | 5,794 |
+| [NABirds](https://dl.allaboutbirds.org/nabirds) | 555 | 21,536 | 2,393 | 24,633 |
+| [Oxford Flowers-102](https://www.robots.ox.ac.uk/~vgg/data/flowers/102/) | 102 | 1,020 | 1,020 | 6,149 |
+| [Stanford Dogs](http://vision.stanford.edu/aditya86/ImageNetDogs/) | 120 | 10,800 | 1,200 | 8,580 |
+| [Stanford Cars](https://ai.stanford.edu/~jkrause/cars/car_dataset.html) | 196 | 7,329 | 815 | 8,041 |
+
+#### VTAB-1k (Visual Task Adaptation Benchmark)
+
+19 diverse visual tasks with 1,000 training samples each, grouped into three categories:
+
+**Natural (7 tasks):** CIFAR-100, Caltech101, DTD, Flowers102, Pets, SVHN, SUN397
+
+**Specialized (4 tasks):** Patch Camelyon, EuroSAT, RESISC45, Retinopathy
+
+**Structured (8 tasks):** CLEVR/count, CLEVR/distance, DMLab, KITTI/distance, dSprites/location, dSprites/orientation, SmallNORB/azimuth, SmallNORB/elevation
+
+> VTAB-1k datasets can be downloaded via [tensorflow_datasets](https://www.tensorflow.org/datasets/catalog/overview).
+
+#### Semantic Segmentation
+
+| Dataset | Classes | Train | Val |
+|---------|---------|-------|-----|
+| [ADE20K](https://groups.csail.mit.edu/vision/datasets/ADE20K/) | 150 | 20,210 | 2,000 |
 
 ## Quick Start
 
