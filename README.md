@@ -77,57 +77,24 @@ python train.py \
 
 ### Key Configuration Options
 
-| Parameter | Description | Default | Paper |
-|-----------|-------------|---------|-------|
-| `MODEL.PROMPT.INITIATION` | Initialization method (`random`, `mpa`) | `mpa` | MPA |
-| `MODEL.PROMPT.KOOPMAN_ENABLED` | Enable KLD regularization | `True` | KLD |
-| `MODEL.PROMPT.KOOPMAN_MOD` | Koopman mode (`global`, `layerwise`) | `global` | Global K |
-| `MODEL.PROMPT.KOOPMAN_DIM` | Koopman latent dimension K | `256` | Eq. 6 |
-| `MODEL.PROMPT.KOOPMAN_WEIGHT` | Weight α for L_kp loss | `0.5` | Eq. 11 |
-| `MODEL.PROMPT.LYAPUNOV_WEIGHT` | Weight β for L_stab loss | `0.2` | Eq. 11 |
-| `MODEL.PROMPT.MPA_WINDOW_SIZE` | MPA sliding window size w | `16` | Sec. 2.2 |
-| `MODEL.PROMPT.MPA_STRIDE` | MPA sliding window stride r | `8` | Sec. 2.2 |
-
-### Koopman Mode Comparison
-
-```bash
-# Global Koopman (recommended - paper default)
-MODEL.PROMPT.KOOPMAN_MOD global
-
-# Layer-wise Koopman (for ablation)
-MODEL.PROMPT.KOOPMAN_MOD layerwise
-```
+| Parameter | Description | Default | 
+|-----------|-------------|---------|
+| `MODEL.PROMPT.INITIATION` | Initialization method (`random`, `mpa`) | `mpa` | 
+| `MODEL.PROMPT.KOOPMAN_ENABLED` | Enable KLD regularization | `True` | 
+| `MODEL.PROMPT.KOOPMAN_MOD` | Koopman mode (`global`, `layerwise`) | `global` |
 
 ## Method Overview
 
-### MPA: Modal Pre-Alignment (Section 2.2)
+### MPA: Modal Pre-Alignment
 
 1. **Phase I - Frequency Shortcut Discovery**: Generate sliding window masks in frequency domain, evaluate task loss, select top-T masks
 2. **Phase II - Prompt Initialization**: Energy-weighted pooling of filtered patch tokens, propagate through frozen encoder
 
-### KLD: Koopman-Lyapunov Dynamical System (Section 2.3)
+### KLD: Koopman-Lyapunov Dynamical System
 
-- **Koopman Evolution**: `z_{i+1} = z_i @ K` with shared global operator K
-- **Consistency Loss**: `L_kp = Σ ||z_{i+1} - z_i @ K||²` (Eq. 8)
-- **Lyapunov Stability**: `L_stab = Σ max(0, V(z_{i+1}) - V(z_i))` (Eq. 10)
-
-## Results
-
-### VTAB-1k Benchmark (ViT-B/16)
-
-| Method | Natural | Specialized | Structured | Mean |
-|--------|---------|-------------|------------|------|
-| VPT | 78.48 | 82.43 | 54.98 | 71.96 |
-| **VPT + PAE** | **81.73** | **84.52** | **58.28** | **74.84** |
-| Gain | +3.25 | +2.09 | +3.30 | **+2.88** |
-
-### Convergence Speedup
-
-| Method | Speedup |
-|--------|---------|
-| VPT + PAE | 1.78x |
-| E2VPT + PAE | 1.65x |
-| SA2VP + PAE | 1.60x |
+- **Koopman Evolution**: `z_{i+1} = z_i @ K`
+- **Consistency Loss**: `L_kp = Σ ||z_{i+1} - z_i @ K||²` 
+- **Lyapunov Stability**: `L_stab = Σ max(0, V(z_{i+1}) - V(z_i))`
 
 ## Project Structure
 
@@ -163,6 +130,3 @@ MODEL.PROMPT.KOOPMAN_MOD layerwise
 
 This codebase builds upon [VPT](https://github.com/kmnp/vpt). We thank the authors for their excellent work.
 
-## License
-
-This project is released under the MIT License.
