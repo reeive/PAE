@@ -6,6 +6,7 @@
 
 Official implementation of **"Visual Prompt-Agnostic Evolution"** (ICLR 2026).
 
+![PAE](fig.png)
 
 ## Key Features
 
