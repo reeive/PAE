@@ -11,7 +11,6 @@ Official implementation of **"Visual Prompt-Agnostic Evolution"** (ICLR 2026).
 ## Key Features
 
 - **1.41x faster convergence** on average across VPT variants
-- **1-3% accuracy gains** on 25 datasets with multiple downstream tasks
 - **Prompt-agnostic**: Works with any VPT variant without backbone modification
 - **No inference overhead**: Only affects training dynamics
 
