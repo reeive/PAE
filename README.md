@@ -76,7 +76,7 @@ We evaluate on **25 datasets** across multiple downstream tasks:
 | [Stanford Dogs](http://vision.stanford.edu/aditya86/ImageNetDogs/main.html) | 120 | 10,800 | 1,200 | 8,580 |
 | [Stanford Cars](https://ai.stanford.edu/~jkrause/cars/car_dataset.html) | 196 | 7,329 | 815 | 8,041 |
 
-####  [Visual Task Adaptation Benchmark](https://google-research.github.io/task_adaptation/) (VTAB)
+#### VTAB ([Visual Task Adaptation Benchmark](https://google-research.github.io/task_adaptation/))
 
 19 diverse visual tasks with 1,000 training samples each, grouped into three categories:
 
