@@ -70,13 +70,13 @@ We evaluate on **25 datasets** across multiple downstream tasks:
 
 | Dataset | Classes | Train | Val | Test |
 |---------|---------|-------|-----|------|
-| [CUB-200-2011](http://www.vision.caltech.edu/visipedia/CUB-200-2011.html) | 200 | 5,394 | 600 | 5,794 |
-| [NABirds](https://dl.allaboutbirds.org/nabirds) | 555 | 21,536 | 2,393 | 24,633 |
-| [Oxford Flowers-102](https://www.robots.ox.ac.uk/~vgg/data/flowers/102/) | 102 | 1,020 | 1,020 | 6,149 |
-| [Stanford Dogs](http://vision.stanford.edu/aditya86/ImageNetDogs/) | 120 | 10,800 | 1,200 | 8,580 |
+| [CUB-200-2011](https://data.caltech.edu/records/65de6-vp158) | 200 | 5,394 | 600 | 5,794 |
+| [NABirds](http://info.allaboutbirds.org/nabirds/) | 555 | 21,536 | 2,393 | 24,633 |
+| [Oxford Flowers-102](https://www.robots.ox.ac.uk/~vgg/data/flowers/) | 102 | 1,020 | 1,020 | 6,149 |
+| [Stanford Dogs](http://vision.stanford.edu/aditya86/ImageNetDogs/main.html) | 120 | 10,800 | 1,200 | 8,580 |
 | [Stanford Cars](https://ai.stanford.edu/~jkrause/cars/car_dataset.html) | 196 | 7,329 | 815 | 8,041 |
 
-#### VTAB-1k (Visual Task Adaptation Benchmark)
+####  [Visual Task Adaptation Benchmark](https://google-research.github.io/task_adaptation/) (VTAB)
 
 19 diverse visual tasks with 1,000 training samples each, grouped into three categories:
 
@@ -86,7 +86,7 @@ We evaluate on **25 datasets** across multiple downstream tasks:
 
 **Structured (8 tasks):** CLEVR/count, CLEVR/distance, DMLab, KITTI/distance, dSprites/location, dSprites/orientation, SmallNORB/azimuth, SmallNORB/elevation
 
-> VTAB-1k datasets can be downloaded via [tensorflow_datasets](https://www.tensorflow.org/datasets/catalog/overview).
+>see [`VTAB_SETUP.md`](https://github.com/KMnP/vpt/blob/main/VTAB_SETUP.md) for detailed instructions and tips.
 
 #### Semantic Segmentation
 
