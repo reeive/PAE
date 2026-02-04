@@ -4,7 +4,7 @@
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 1.7+](https://img.shields.io/badge/pytorch-1.7+-ee4c2c.svg)](https://pytorch.org/)
 
-Official implementation of **"Visual Prompt-Agnostic Evolution"** (ICLR 2026).
+Official implementation of **Visual Prompt-Agnostic Evolution** (ICLR 2026).
 
 ![PAE](fig.png)
 
