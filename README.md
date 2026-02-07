@@ -1,8 +1,9 @@
 # Visual Prompt-Agnostic Evolution 
 
-[![ICLR 2026](https://img.shields.io/badge/ICLR-2026-blue.svg)](https://arxiv.org/abs/2601.20232)
-[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch 1.7+](https://img.shields.io/badge/pytorch-1.7+-ee4c2c.svg)](https://pytorch.org/)
+[![ICLR 2026](https://img.shields.io/badge/ICLR-2026-A9C4EB.svg)](https://openreview.net/forum?id=3vmDyYC9Tn)
+[![Arxiv](https://img.shields.io/badge/ICLR-2026-red.svg)](https://arxiv.org/abs/2601.20232)
+[![Python 3.7+](https://img.shields.io/badge/python-3.7+-67AB9F.svg)](https://www.python.org/downloads/)
+[![PyTorch 1.7+](https://img.shields.io/badge/pytorch-1.7+-D5E8D4.svg)](https://pytorch.org/)
 
 Official implementation of **Visual Prompt-Agnostic Evolution** (ICLR 2026).
 
