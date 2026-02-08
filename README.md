@@ -1,7 +1,7 @@
 # Visual Prompt-Agnostic Evolution 
 
-[![ICLR 2026](https://img.shields.io/badge/Openreview-A9C4EB.svg)](https://openreview.net/forum?id=3vmDyYC9Tn)
-[![Arxiv](https://img.shields.io/badge/Arxiv-red.svg)](https://arxiv.org/abs/2601.20232)
+[![ICLR 2026](https://img.shields.io/badge/ICLR-2026-A9C4EB.svg)](https://openreview.net/forum?id=3vmDyYC9Tn)
+[![Arxiv](https://img.shields.io/badge/Arxiv-2601.20232-F19C99.svg)](https://arxiv.org/abs/2601.20232)
 
 Official implementation of **Visual Prompt-Agnostic Evolution** (ICLR 2026).
 
